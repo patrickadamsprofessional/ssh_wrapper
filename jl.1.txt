@@ -1,0 +1,207 @@
+.TH JL 1 "June 2024" "jl 1.0" "User Commands"
+.SH NAME
+jl \- modern SSH automation and login tool with extensibility, jump host, and logging support
+.SH SYNOPSIS
+.B jl
+[OPTIONS] --inventory inventory.yaml [--config jl_config.yaml] host [host ...]
+.SH DESCRIPTION
+.B jl
+is a modern, extensible SSH automation tool inspired by jlogin, designed for network engineers and automation professionals. It uses two main YAML files:
+- The global config file (specified with --config or -f, default: jl_config.yaml) for logging, scrollback, and global defaults.
+- The inventory file (specified with --inventory or -i, default: inventory.yaml) for hosts, groups, and per-device defaults.
+
+This separation allows you to manage global settings and device inventory independently.
+
+.SH OPTIONS
+.TP
+.BI -f " config"
+Global config file (logging, scrollback, etc.). Default: jl_config.yaml
+.TP
+.BI -i " inventory"
+Inventory file (hosts, groups, defaults). Default: inventory.yaml
+.TP
+.BI -c " command"
+Run a command on the remote host after login. The output is shown and optionally logged.
+.TP
+.BI -x " file"
+Run commands from a file (each line is a command). Useful for batch operations.
+.TP
+.BI -E " VAR=VAL"
+Set environment variable for scripts (repeatable). Use multiple times for multiple variables.
+.TP
+.BI -e " file"
+Load environment variables from a file (VAR=VAL per line).
+.TP
+.BI -s " script.py"
+Run a Python script with access to the live SSH session (see EXTENSIBILITY).
+.TP
+.BI -p " password"
+User password for SSH login. If omitted, will prompt if needed.
+.TP
+.BI -u " username"
+Username for SSH login. Overrides inventory/defaults.
+.TP
+.BI -r " passphrase"
+SSH key passphrase. If omitted, will prompt if needed.
+.TP
+.BI -y " cipher"
+SSH cipher type (only if needed; modern ciphers are auto-selected).
+.TP
+.BI -V
+Show version and exit.
+.TP
+.BI -d
+Enable debug output (shows SSH commands, key types, and more).
+.TP
+.BI --keyfile " file"
+SSH private key file (overrides inventory).
+.TP
+.BI -T, --timestamp
+Print timestamp after each command (for auditing and logs).
+.TP
+.BI --logfile " file"
+Log all input/output to this file (overrides config).
+.TP
+.BI -J, --proxyjump " user@jump[,user2@jump2,...]"
+Use ProxyJump (ssh -J) for jump hosts. Fast and secure if supported.
+.TP
+.BI --jump-host, --jump-username, --jump-keyfile, --jump-password, --jump-keyfile-location
+Manual jump host options (for pexpect-in-pexpect chains). See JUMP HOSTS.
+.TP
+.BI --jump-config " file"
+YAML file with jump chain configuration (see jumps_example.yaml).
+.TP
+.BI --witness-jump
+Interactive mode to record and save a jump sequence (see JUMP HOSTS).
+.TP
+.BI --refresh-config
+Force refresh of remote config file (bypass cache).
+.TP
+.BI --config-cache-expiry " seconds"
+Remote config cache expiry in seconds (0 = always flush, default: 600).
+
+.SH CONFIGURATION
+The global config file (jl_config.yaml) contains logging, scrollback, and global defaults. The inventory file (inventory.yaml) contains hosts, groups, and per-device defaults. Example:
+
+.nf
+# jl_config.yaml
+logging:
+  enabled: true
+  file: /var/log/jl/
+  log_filename_format: "{device}_{date}_{time}.log"
+  log_dir_by_date: true
+scrollback: 10000
+defaults:
+  username: admin
+  keyfile: /home/admin/.ssh/id_ed25519
+  password: null
+
+# inventory.yaml
+hosts:
+  router1:
+    hostname: 10.0.0.1
+    username: admin
+    keyfile: /home/admin/.ssh/id_ed25519
+    jump_config: jumps.yaml
+    logging:
+      enabled: true
+      file: /var/log/jl/
+      log_filename_format: "{device}_{date}_{time}.log"
+      log_dir_by_date: true
+    scrollback: 10000
+  router2:
+    hostname: 10.0.0.2
+    username: netops
+    keyfile: /home/netops/.ssh/id_rsa
+    password: null
+groups:
+  core:
+    username: coreuser
+    keyfile: /home/coreuser/.ssh/id_ed25519
+defaults:
+  username: admin
+  keyfile: /home/admin/.ssh/id_ed25519
+  password: null
+.fi
+
+.SH JUMP HOSTS
+Jump hosts can be configured via ProxyJump (-J) or manual chains (jump: in config or --jump-* flags). Chains can be stored in a separate YAML file and referenced with --jump-config.
+
+.nf
+# Example jump chain (see jumps_example.yaml):
+jump:
+  - host: jump1.example.com
+    username: jumpuser1
+    keyfile: /home/jumpuser1/.ssh/id_rsa
+    keyfile_location: local
+    password: null
+  - host: jump2.example.com
+    username: jumpuser2
+    keyfile: /home/jumpuser2/.ssh/id_ed25519
+    keyfile_location: jump1.example.com
+    password: null
+  - host: jump3.example.com
+    username: jumpuser3
+    password: mysecretpassword  # Password-only jump
+  - host: target.example.com
+    username: admin
+    keyfile: /home/admin/.ssh/id_ed25519
+    keyfile_location: jump3.example.com
+    password: null
+.fi
+
+- For password-only jumps, omit keyfile and keyfile_location, and provide username and password.
+- For key-based jumps, specify keyfile and keyfile_location ("local" or a hostname in the chain).
+
+.SH LOGGING
+Logging can be enabled in the config file. Log file names and directories can be dynamically set using {device}, {date}, {time} in log_filename_format and log_dir_by_date. All user input and device output is logged, including timestamps if enabled.
+
+.SH REMOTE CONFIG
+Config files can be loaded from remote hosts using sftp:// or scp:// URLs. Caching and refresh are supported. Use --refresh-config to force a re-download, and --config-cache-expiry to control cache duration.
+
+.SH EXTENSIBILITY
+Use -s script.py to run a Python script with access to the live SSH session (as 'session'), host info, and environment variables. This allows for event-driven automation, custom expect/send loops, and more.
+
+.SH EXAMPLES
+.TP
+Login to a device using inventory:
+.B jl --inventory inventory.yaml router1
+.TP
+Run a command and log output:
+.B jl --inventory inventory.yaml -c "show version" -T --logfile /tmp/mylog.log router1
+.TP
+Use a jump host chain from a config file:
+.B jl --inventory inventory.yaml --jump-config jumps_example.yaml router2
+.TP
+Password-only jump in a chain:
+.B jl --inventory inventory.yaml --jump-config jumps_example.yaml router3
+.TP
+Fetch remote inventory and force refresh:
+.B jl --inventory sftp://user@host:/path/inventory.yaml --refresh-config router3
+.TP
+Witness and save a jump sequence:
+.B jl --witness-jump
+.TP
+Run a Python script after login:
+.B jl --inventory inventory.yaml -s myscript.py router1
+
+.SH TROUBLESHOOTING
+- If you see authentication or key errors, check your keyfile paths, permissions, and keyfile_location settings.
+- For password-only jumps, ensure the password is correct and the account is not locked.
+- Use -d for debug output to see SSH commands and prompt handling.
+- If remote config fetch fails, check SSH key access and network connectivity.
+- For large pastes, ensure your scrollback and input buffer settings are sufficient.
+
+.SH SECURITY NOTES
+- Always use SSH keys where possible for automation.
+- Protect your config and jump files; they may contain sensitive credentials.
+- Use per-user SSH keys and limit jump host access.
+- Consider using encrypted storage or a credentials API for production environments.
+
+.SH SEE ALSO
+- Project README and documentation
+- Nornir inventory documentation: https://nornir.readthedocs.io/en/latest/tutorials/inventory/index.html
+- OpenSSH man pages: ssh(1), ssh_config(5)
+
+.SH AUTHOR
+Written by Patrick Adams

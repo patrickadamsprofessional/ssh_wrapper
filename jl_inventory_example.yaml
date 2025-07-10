@@ -1,0 +1,30 @@
+# jl_inventory_example.yaml
+# Example inventory file for jl (Nornir-style)
+
+hosts:
+  router1:
+    hostname: 10.0.0.1
+    username: admin
+    keyfile: /home/admin/.ssh/id_ed25519
+    jump_config: jumps.yaml  # Reference to a jump chain file
+    logging:
+      enabled: true
+      file: /var/log/jl/
+      log_filename_format: "{device}_{date}_{time}.log"
+      log_dir_by_date: true
+    scrollback: 5000
+  router2:
+    hostname: 10.0.0.2
+    username: netops
+    keyfile: /home/netops/.ssh/id_rsa
+    password: null
+
+groups:
+  core:
+    username: coreuser
+    keyfile: /home/coreuser/.ssh/id_ed25519
+
+defaults:
+  username: admin
+  keyfile: /home/admin/.ssh/id_ed25519
+  password: null 

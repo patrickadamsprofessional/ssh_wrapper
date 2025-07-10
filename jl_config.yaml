@@ -1,0 +1,15 @@
+# jl_config_example.yaml
+# Example main config file for jl
+
+logging:
+  enabled: true
+  file: /home/iqfiber/logs/
+  log_filename_format: "{device}_{date}_{time}.log"  # Use device, date, and time in log file names
+  log_dir_by_date: true  # Store logs in subfolders by date
+
+scrollback: 0  # Number of lines to keep in scrollback buffer (0 = unlimited)
+
+defaults:
+  username: iqfiber
+  keyfile: /home/iqfiber/.ssh/id_ed25519
+  password: null 

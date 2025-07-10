@@ -1,0 +1,46 @@
+{#
+Mockup of expected input JSON object for this template:
+
+{
+  "jump": [
+    {
+      "host": "jump1.example.com",
+      "username": "jumpuser1",
+      "keyfile": "/home/jumpuser1/.ssh/id_rsa",
+      "keyfile_location": "local",
+      "password": null
+    },
+    {
+      "host": "jump2.example.com",
+      "username": "jumpuser2",
+      "keyfile": "/home/jumpuser2/.ssh/id_ed25519",
+      "keyfile_location": "jump1.example.com",
+      "password": null
+    },
+    {
+      "host": "jump3.example.com",
+      "username": "jumpuser3",
+      "password": "mysecretpassword"  # Password-only jump, no keyfile or keyfile_location
+    },
+    {
+      "host": "target.example.com",
+      "username": "admin",
+      "keyfile": "/home/admin/.ssh/id_ed25519",
+      "keyfile_location": "jump3.example.com",
+      "password": null
+    }
+  ]
+}
+#}
+
+# jumps_template.j2
+# Jinja2 template for jl jump chain YAML
+
+jump:
+{% for hop in jump %}
+  - host: {{ hop.host }}
+    username: {{ hop.username }}
+    {% if hop.keyfile is defined %}keyfile: {{ hop.keyfile }}
+    {% endif %}{% if hop.keyfile_location is defined %}keyfile_location: {{ hop.keyfile_location }}
+    {% endif %}password: {{ hop.password }}
+{% endfor %} 

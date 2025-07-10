@@ -1,0 +1,19 @@
+# jumps.yaml
+# Example jump chain file for jl with explicit keyfile_location
+
+jump:
+  - host: jump1.example.com
+    username: jumpuser1
+    keyfile: /home/jumpuser1/.ssh/id_rsa
+    keyfile_location: local  # Keyfile is on the originating client
+    password: null
+  - host: jump2.example.com
+    username: jumpuser2
+    keyfile: /home/jumpuser2/.ssh/id_ed25519
+    keyfile_location: jump1.example.com  # Keyfile is on jump1
+    password: null
+  - host: target.example.com
+    username: admin
+    keyfile: /home/admin/.ssh/id_ed25519
+    keyfile_location: jump2.example.com  # Keyfile is on jump2
+    password: null 
