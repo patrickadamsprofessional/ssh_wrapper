@@ -1,5 +1,6 @@
 # jl_inventory_example.yaml
 # Example inventory file for jl (Nornir-style)
+# Wildcard entries never provide an IP/hostname; /etc/hosts and DNS will be checked for the actual address.
 
 hosts:
   router1:
@@ -18,11 +19,27 @@ hosts:
     username: netops
     keyfile: /home/netops/.ssh/id_rsa
     password: null
-
-groups:
-  core:
-    username: coreuser
-    keyfile: /home/coreuser/.ssh/id_ed25519
+  '*.lab':
+    # Partial wildcard: matches any host ending with .lab
+    # No hostname/IP provided; /etc/hosts and DNS will be checked for the address
+    username: labuser
+    keyfile: /home/labuser/.ssh/id_ed25519
+  'router*':
+    # Partial wildcard: matches any host starting with 'router'
+    # No hostname/IP provided; /etc/hosts and DNS will be checked for the address
+    username: routerops
+    keyfile: /home/routerops/.ssh/id_rsa
+  '*.example.com':
+    # Partial wildcard: matches any host ending with .example.com
+    # No hostname/IP provided; /etc/hosts and DNS will be checked for the address
+    username: exampleuser
+    keyfile: /home/exampleuser/.ssh/id_ed25519
+  '*':
+    # Catch-all wildcard: matches any host not matched above (should always be last)
+    # No hostname/IP provided; /etc/hosts and DNS will be checked for the address
+    username: defaultuser
+    keyfile: /home/default/.ssh/id_rsa
+    password: null
 
 defaults:
   username: admin

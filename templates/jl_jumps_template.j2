@@ -1,0 +1,18 @@
+# jl_jumps_template.j2
+# Jinja2 template for jl jump chain YAML
+# Each jump may specify a keyfile, a password, or both. If keyfile is not present or fails, password will be used if provided.
+
+jump:
+{% for hop in jump %}
+  - host: {{ hop.host }}
+    username: {{ hop.username }}
+{% if hop.password is defined %}
+    password: {{ hop.password }}
+{% endif %}
+{% if hop.keyfile is defined %}
+    keyfile: {{ hop.keyfile }}
+{% endif %}
+{% if hop.keyfile_location is defined %}
+    keyfile_location: {{ hop.keyfile_location }}
+{% endif %}
+{% endfor %} 

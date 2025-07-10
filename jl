@@ -27,6 +27,12 @@ import paramiko
 import termios
 import tty
 import select
+import fnmatch
+from collections import OrderedDict
+import socket
+import tempfile
+import random
+import string
 
 # =========================
 # Argument Parsing Section
@@ -170,6 +176,12 @@ def load_inventory(config_file, refresh_config=False, cache_expiry=600):
         with open(config_file, 'r') as f:
             return yaml.safe_load(f)
 
+def load_inventory_ordered(path, refresh_config=False, cache_expiry=None):
+    # Load YAML preserving order
+    import yaml
+    with open(path, 'r') as f:
+        return yaml.load(f, Loader=yaml.SafeLoader)
+
 # =========================
 # Logging Config
 # =========================
@@ -299,6 +311,16 @@ def get_jump_config(args, hostdata, inventory):
             jump_chain = [inventory['defaults']['jump']]
     return proxyjump, jump_chain
 
+def match_host_in_inventory(host, inventory_hosts):
+    # inventory_hosts: OrderedDict or list of (name, data)
+    for entry, data in inventory_hosts.items():
+        if entry == host:
+            return data, entry
+        if '*' in entry or '?' in entry:
+            if fnmatch.fnmatch(host, entry):
+                return data, entry
+    return None, None
+
 # =========================
 # Witness/Learning Mode
 # =========================
@@ -363,6 +385,37 @@ def witness_jump_sequence():
 # =========================
 # SSH Connection Logic
 # =========================
+def propagate_keyfile_to_jump(child, local_keyfile_path, remote_keyfile_path, debug=False):
+    """
+    Securely copy a keyfile to a remote jump host via the open shell session (pexpect child).
+    1. touch the file
+    2. chmod 600
+    3. cat the contents (not echoed)
+    """
+    with open(local_keyfile_path, 'r') as f:
+        key_contents = f.read()
+    # Step 1: touch the file
+    child.sendline(f'touch {remote_keyfile_path}')
+    child.expect(r'[$#] ')
+    # Step 2: chmod 600
+    child.sendline(f'chmod 600 {remote_keyfile_path}')
+    child.expect(r'[$#] ')
+    # Step 3: cat the contents (not echoed)
+    child.sendline(f'cat > {remote_keyfile_path}')
+    child.send(key_contents)
+    child.send("\x04")  # Send EOF (Ctrl-D)
+    child.expect(r'[$#] ')
+    if debug:
+        print(f"[DEBUG] Keyfile propagated to jump host: {remote_keyfile_path}")
+
+
+def delete_keyfile_from_jump(child, remote_keyfile_path, debug=False):
+    """Delete the temporary keyfile from the remote jump host."""
+    child.sendline(f'rm -f {remote_keyfile_path}')
+    child.expect(r'[$#] ')
+    if debug:
+        print(f"[DEBUG] Keyfile deleted from jump host: {remote_keyfile_path}")
+
 def ssh_connect(host, user, password, keyfile, passphrase, cipher, command, debug, user_script=None, hostdata=None, env_vars=None, timestamp=False, logging_enabled=False, logfile=None, scrollback_lines=1000, proxyjump=None, jump_chain=None, target_device_name=None, previous_jump_host=None):
     """
     Establish an SSH connection using pexpect.
@@ -404,19 +457,24 @@ def ssh_connect(host, user, password, keyfile, passphrase, cipher, command, debu
             keyfile_location = 'local' if previous_jump_host is None else previous_jump_host
         # For the current jump, use keyfile from the correct location
         ssh_cmd = f"ssh "
-        if keyfile_location == 'local':
-            # Use keyfile from originating client
-            if jump_keyfile:
+        remote_keyfile_path = None
+        if keyfile_location == 'local' and jump_keyfile:
+            # If the keyfile is needed on a remote jump host, propagate it
+            if previous_jump_host is not None:
+                # Generate a unique filename for the keyfile on the jump host
+                rand_str = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+                remote_keyfile_path = f"/tmp/jl_keyfile_{rand_str}.pem"
+                propagate_keyfile_to_jump(child, jump_keyfile, remote_keyfile_path, debug=debug)
+                ssh_cmd += f"-i {shlex.quote(remote_keyfile_path)} "
+            else:
                 ssh_cmd += f"-i {shlex.quote(jump_keyfile)} "
                 if debug:
                     key_type = detect_key_type(jump_keyfile)
                     print(f"[DEBUG] Using jump keyfile (local): {jump_keyfile} (type: {key_type})")
         elif keyfile_location == jump_host:
-            # Use keyfile from this jump host (assume available after login)
-            pass  # No -i flag needed for this hop; will be used in next hop
+            pass  # Assume keyfile is present on this jump host
         else:
-            # Use keyfile from a previous jump host (not supported for this hop, but may be used in next hop)
-            pass
+            pass  # Not supported for this hop
         ssh_cmd += f"{shlex.quote(jump_user)}@{shlex.quote(jump_host)}"
         if debug:
             print(f"[DEBUG] SSH jump command: {ssh_cmd}")
@@ -434,9 +492,11 @@ def ssh_connect(host, user, password, keyfile, passphrase, cipher, command, debu
                 if i == 0:
                     jump_child.sendline("yes")
                 elif i == 1:
-                    if jump_password is None:
+                    if jump_password is not None:
+                        jump_child.sendline(jump_password)
+                    else:
                         jump_password = getpass.getpass(f"Password for {jump_user}@{jump_host}: ")
-                    jump_child.sendline(jump_password)
+                        jump_child.sendline(jump_password)
                 elif i == 2:
                     passphrase = getpass.getpass(f"SSH key passphrase for {jump_user}@{jump_host}: ")
                     jump_child.sendline(passphrase)
@@ -452,10 +512,8 @@ def ssh_connect(host, user, password, keyfile, passphrase, cipher, command, debu
                         )
                     else:
                         # Final hop: SSH to target from jump
-                        # Determine which keyfile to use and from where
                         inner_ssh_cmd = f"ssh "
                         if keyfile:
-                            # Use keyfile if its location matches this jump host or is 'local'
                             final_keyfile_location = keyfile_location if keyfile_location != 'local' else previous_jump_host
                             if final_keyfile_location == jump_host or keyfile_location == 'local':
                                 inner_ssh_cmd += f"-i {shlex.quote(keyfile)} "
@@ -470,6 +528,9 @@ def ssh_connect(host, user, password, keyfile, passphrase, cipher, command, debu
                         if debug:
                             print(f"[DEBUG] SSH from jump to target: {inner_ssh_cmd}")
                         jump_child.sendline(inner_ssh_cmd)
+                        # After use, delete the propagated keyfile if it was created
+                        if remote_keyfile_path:
+                            delete_keyfile_from_jump(jump_child, remote_keyfile_path, debug=debug)
                         return ssh_pexpect_session(jump_child, host, user, password, keyfile, passphrase, cipher, command, debug, user_script, hostdata, env_vars, timestamp, logging_enabled, logfile, scrollback_lines, target_device_name=target_device_name)
                 elif i == 4:
                     print("[ERROR] Jump server connection closed unexpectedly.")
@@ -693,8 +754,8 @@ def main():
 
     # Load global config (logging, scrollback, etc.)
     config = load_inventory(args.config, refresh_config=args.refresh_config, cache_expiry=args.config_cache_expiry) or {}
-    # Load inventory (hosts, groups, defaults)
-    inventory = load_inventory(args.inventory, refresh_config=args.refresh_config, cache_expiry=args.config_cache_expiry) or {}
+    # Load inventory (hosts, groups, defaults) with order preserved
+    inventory = load_inventory_ordered(args.inventory, refresh_config=args.refresh_config, cache_expiry=args.config_cache_expiry) or {}
     host = args.host
 
     # Merge defaults: inventory defaults override config defaults
@@ -713,11 +774,57 @@ def main():
         env_vars.update(load_env_file(args.env_file))
     merge_env_vars(env_vars)
 
-    # Only operate on a single host
-    if host not in inventory['hosts']:
-        print(f"Host {host} not found in inventory.")
+    # Host lookup with ordered wildcard logic
+    hostdata, matched_entry = match_host_in_inventory(host, inventory['hosts'])
+    if hostdata is not None:
+        if '*' in matched_entry or '?' in matched_entry:
+            # Wildcard match: check /etc/hosts for IP, else use literal host
+            hostdata = dict(hostdata)
+            etc_hosts_ip = None
+            try:
+                with open('/etc/hosts', 'r') as f:
+                    for line in f:
+                        if line.strip() and not line.startswith('#'):
+                            parts = line.split()
+                            if len(parts) >= 2 and host in parts[1:]:
+                                etc_hosts_ip = parts[0]
+                                break
+            except Exception:
+                pass
+            if etc_hosts_ip:
+                hostdata['hostname'] = etc_hosts_ip
+                print(f"[INFO] Using /etc/hosts IP for {host}: {etc_hosts_ip}")
+            else:
+                hostdata['hostname'] = host
+                print(f"[INFO] Using wildcard inventory entry '{matched_entry}' for host: {host}")
+        # else: exact match, use inventory hostname as usual
+    else:
+        # Try /etc/hosts as a last resort
+        etc_hosts_ip = None
+        try:
+            with open('/etc/hosts', 'r') as f:
+                for line in f:
+                    if line.strip() and not line.startswith('#'):
+                        parts = line.split()
+                        if len(parts) >= 2 and host in parts[1:]:
+                            etc_hosts_ip = parts[0]
+                            hostdata = {'hostname': etc_hosts_ip}
+                            print(f"[INFO] Using /etc/hosts IP for {host}: {etc_hosts_ip}")
+                            break
+        except Exception as e:
+            pass
+        # If still not found, try DNS resolution
+        if not hostdata:
+            try:
+                resolved_ip = socket.gethostbyname(host)
+                hostdata = {'hostname': resolved_ip}
+                print(f"[INFO] Using DNS-resolved IP for {host}: {resolved_ip}")
+            except Exception:
+                pass
+    if not hostdata:
+        print(f"Host {host} not found in inventory, wildcards, /etc/hosts, or DNS.")
         sys.exit(1)
-    hostdata = inventory['hosts'][host]
+
     # Use merged defaults for all lookups
     user = args.username or hostdata.get('username') or inventory['defaults'].get('username') or os.environ.get('USER')
     password = args.password or hostdata.get('password') or inventory['defaults'].get('password')

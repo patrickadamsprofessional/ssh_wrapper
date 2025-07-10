@@ -1,0 +1,46 @@
+{
+  "_comment": "Example data-object for rendering templates/jl_inventory_template.j2. Populate with your own hosts and defaults as needed.",
+  "hosts": {
+    "router1": {
+      "hostname": "10.0.0.1",
+      "username": "admin",
+      "keyfile": "/home/admin/.ssh/id_ed25519",
+      "jump_config": "jumps.yaml",
+      "logging": {
+        "enabled": true,
+        "file": "/var/log/jl/",
+        "log_filename_format": "{device}_{date}_{time}.log",
+        "log_dir_by_date": true
+      },
+      "scrollback": 5000
+    },
+    "router2": {
+      "hostname": "10.0.0.2",
+      "username": "netops",
+      "keyfile": "/home/netops/.ssh/id_rsa",
+      "password": null
+    },
+    "*.lab": {
+      "username": "labuser",
+      "keyfile": "/home/labuser/.ssh/id_ed25519"
+    },
+    "router*": {
+      "username": "routerops",
+      "keyfile": "/home/routerops/.ssh/id_rsa"
+    },
+    "*.example.com": {
+      "username": "exampleuser",
+      "keyfile": "/home/exampleuser/.ssh/id_ed25519"
+    },
+    "*": {
+      "username": "defaultuser",
+      "keyfile": "/home/default/.ssh/id_rsa",
+      "password": null
+    }
+  },
+  "defaults": {
+    "username": "admin",
+    "keyfile": "/home/admin/.ssh/id_ed25519",
+    "password": null
+  }
+} 

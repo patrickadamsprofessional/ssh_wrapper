@@ -1,0 +1,31 @@
+{
+  "_comment": "Example data-object for rendering templates/jl_jumps_template.j2. Populate with your own jump chain as needed.",
+  "jump": [
+    {
+      "host": "jump1.example.com",
+      "username": "jumpuser1",
+      "password": "supersecret1",
+      "keyfile": "/home/jumpuser1/.ssh/id_rsa",
+      "keyfile_location": "local"
+    },
+    {
+      "host": "jump2.example.com",
+      "username": "jumpuser2",
+      "password": "supersecret2",
+      "keyfile": "/home/jumpuser2/.ssh/id_ed25519",
+      "keyfile_location": "jump1.example.com"
+    },
+    {
+      "host": "target.example.com",
+      "username": "admin",
+      "password": "targetpass",
+      "keyfile": "/home/admin/.ssh/id_ed25519",
+      "keyfile_location": "jump2.example.com"
+    },
+    {
+      "host": "passwordonly.example.com",
+      "username": "pwuser",
+      "password": "onlypassword"
+    }
+  ]
+} 

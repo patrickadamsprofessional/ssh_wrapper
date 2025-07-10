@@ -1,83 +1,26 @@
-{#
-Mockup of expected input JSON object for this template:
-
-{
-  "hosts": {
-    "router1": {
-      "hostname": "10.0.0.1",
-      "username": "admin",
-      "keyfile": "/home/admin/.ssh/id_ed25519",
-      "jump_config": "jumps.yaml",
-      "logging": {
-        "enabled": true,
-        "file": "/var/log/jl/",
-        "log_filename_format": "{device}_{date}_{time}.log",
-        "log_dir_by_date": true
-      },
-      "scrollback": 5000
-    },
-    "router2": {
-      "hostname": "10.0.0.2",
-      "username": "netops",
-      "keyfile": "/home/netops/.ssh/id_rsa",
-      "password": null
-    }
-  },
-  "groups": {
-    "core": {
-      "username": "coreuser",
-      "keyfile": "/home/coreuser/.ssh/id_ed25519"
-    }
-  },
-  "defaults": {
-    "username": "admin",
-    "keyfile": "/home/admin/.ssh/id_ed25519",
-    "password": null
-  }
-}
-
-Example jump chain for jumps.yaml:
-
-jump:
-  - host: jump1.example.com
-    username: jumpuser1
-    keyfile: /home/jumpuser1/.ssh/id_rsa
-    keyfile_location: local
-  - host: jump2.example.com
-    username: jumpuser2
-    keyfile: /home/jumpuser2/.ssh/id_ed25519
-    keyfile_location: jump1.example.com
-  - host: target.example.com
-    username: admin
-    keyfile: /home/admin/.ssh/id_ed25519
-    keyfile_location: jump2.example.com
-#}
-
 # jl_inventory_template.j2
 # Jinja2 template for jl inventory YAML (Nornir-style)
+# Wildcard entries never provide an IP/hostname; /etc/hosts and DNS will be checked for the actual address.
 
 hosts:
 {% for host, data in hosts.items() %}
   {{ host }}:
 {% for k, v in data.items() %}
-    {% if v is mapping %}
-    {{ k }}:
-{% for sk, sv in v.items() %}
-      {{ sk }}: {{ sv|tojson if sv is mapping or sv is sequence else sv }}
-{% endfor %}
-    {% else %}
     {{ k }}: {{ v|tojson if v is mapping or v is sequence else v }}
-    {% endif %}
 {% endfor %}
 {% endfor %}
 
-groups:
-{% for group, data in groups.items() %}
-  {{ group }}:
-{% for k, v in data.items() %}
-    {{ k }}: {{ v|tojson if v is mapping or v is sequence else v }}
-{% endfor %}
-{% endfor %}
+# Place partial wildcards (e.g., '*.lab', 'router*') above the catch-all '*' for correct precedence.
+# The catch-all '*' should always be the last host entry.
+
+# Example wildcard entry (for reference, not rendered):
+# '*.lab':
+#   username: labuser
+#   keyfile: /home/labuser/.ssh/id_ed25519
+# '*':
+#   username: defaultuser
+#   keyfile: /home/default/.ssh/id_rsa
+#   password: null
 
 defaults:
 {% for k, v in defaults.items() %}
